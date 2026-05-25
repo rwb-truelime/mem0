@@ -57,8 +57,8 @@ SENSITIVE_CONFIG_KEYS = {
 SKIPPED_REQUEST_LOG_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json"}
 SKIPPED_REQUEST_LOG_PREFIXES = ("/requests",)
 
-BUNDLED_LLM_PROVIDERS = ("openai", "anthropic", "gemini")
-BUNDLED_EMBEDDER_PROVIDERS = ("openai", "gemini")
+BUNDLED_LLM_PROVIDERS = ("openai", "anthropic", "gemini", "azure_openai", "azure_openai_structured")
+BUNDLED_EMBEDDER_PROVIDERS = ("openai", "gemini", "azure_openai")
 
 
 def _warn_if_unconfigured() -> None:
@@ -111,9 +111,50 @@ POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")
 POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
+DEFAULT_LLM_PROVIDER = os.environ.get("MEM0_DEFAULT_LLM_PROVIDER", "openai")
 DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-4.1-nano-2025-04-14")
+DEFAULT_EMBEDDER_PROVIDER = os.environ.get("MEM0_DEFAULT_EMBEDDER_PROVIDER", "openai")
 DEFAULT_EMBEDDER_MODEL = os.environ.get("MEM0_DEFAULT_EMBEDDER_MODEL", "text-embedding-3-small")
+
+
+def _optional_int(value: str | None) -> int | None:
+    return int(value) if value else None
+
+
+DEFAULT_EMBEDDING_DIMS = _optional_int(os.environ.get("MEM0_DEFAULT_EMBEDDING_DIMS"))
+
+
+def _azure_kwargs(model: str) -> Dict[str, Any]:
+    return {
+        "api_key": AZURE_OPENAI_API_KEY,
+        "azure_deployment": model,
+        "azure_endpoint": AZURE_OPENAI_ENDPOINT,
+        "api_version": AZURE_OPENAI_API_VERSION,
+    }
+
+
+def _build_llm_config() -> Dict[str, Any]:
+    config: Dict[str, Any] = {"temperature": 0.2, "model": DEFAULT_LLM_MODEL}
+    if DEFAULT_LLM_PROVIDER.startswith("azure_openai"):
+        config["azure_kwargs"] = _azure_kwargs(DEFAULT_LLM_MODEL)
+    else:
+        config["api_key"] = OPENAI_API_KEY
+    return {"provider": DEFAULT_LLM_PROVIDER, "config": config}
+
+
+def _build_embedder_config() -> Dict[str, Any]:
+    config: Dict[str, Any] = {"model": DEFAULT_EMBEDDER_MODEL}
+    if DEFAULT_EMBEDDING_DIMS is not None:
+        config["embedding_dims"] = DEFAULT_EMBEDDING_DIMS
+    if DEFAULT_EMBEDDER_PROVIDER == "azure_openai":
+        config["azure_kwargs"] = _azure_kwargs(DEFAULT_EMBEDDER_MODEL)
+    else:
+        config["api_key"] = OPENAI_API_KEY
+    return {"provider": DEFAULT_EMBEDDER_PROVIDER, "config": config}
 
 DEFAULT_CONFIG = {
     "version": "v1.1",
@@ -128,11 +169,8 @@ DEFAULT_CONFIG = {
             "collection_name": POSTGRES_COLLECTION_NAME,
         },
     },
-    "llm": {
-        "provider": "openai",
-        "config": {"api_key": OPENAI_API_KEY, "temperature": 0.2, "model": DEFAULT_LLM_MODEL},
-    },
-    "embedder": {"provider": "openai", "config": {"api_key": OPENAI_API_KEY, "model": DEFAULT_EMBEDDER_MODEL}},
+    "llm": _build_llm_config(),
+    "embedder": _build_embedder_config(),
     "history_db_path": HISTORY_DB_PATH,
 }
 
