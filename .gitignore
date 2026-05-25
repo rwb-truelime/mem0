@@ -2,6 +2,7 @@
 opencode-session-mem0-config.md
 .gitnexus
 .claude
+server/docker-compose.yaml*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -12,6 +13,7 @@ __pycache__/
 # Self-hosted server local runtime state
 server/history/
 server/.env
+server/.env*
 
 # C extensions
 *.so
