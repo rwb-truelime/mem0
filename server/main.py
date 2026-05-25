@@ -175,6 +175,79 @@ DEFAULT_CONFIG = {
 }
 
 
+_PATCHES_APPLIED = False
+
+
+def _model_uses_max_completion_tokens(model: str | None) -> bool:
+    if not model:
+        return False
+    base_model = model.lower().rsplit("/", 1)[-1]
+    return base_model.startswith(("gpt-4.1", "gpt-5"))
+
+
+def _apply_patches() -> None:
+    """Apply server-local compatibility patches for the bundled self-hosted stack."""
+    global _PATCHES_APPLIED
+    if _PATCHES_APPLIED:
+        return
+
+    from mem0.embeddings.azure_openai import AzureOpenAIEmbedding
+    from mem0.llms.base import LLMBase
+    from mem0.vector_stores.pgvector import OutputData, PGVector
+
+    original_embed = AzureOpenAIEmbedding.embed
+    original_embed_batch = AzureOpenAIEmbedding.embed_batch
+    original_get_common_params = LLMBase._get_common_params
+    original_pgvector_search = PGVector.search
+
+    def patched_embed(self, text, memory_action=None):
+        dimensions = getattr(self.config, "embedding_dims", None)
+        if dimensions is None:
+            return original_embed(self, text, memory_action)
+        text = text.replace("\n", " ")
+        return self.client.embeddings.create(
+            input=[text],
+            model=self.config.model,
+            dimensions=dimensions,
+        ).data[0].embedding
+
+    def patched_embed_batch(self, texts, memory_action="add"):
+        dimensions = getattr(self.config, "embedding_dims", None)
+        if dimensions is None:
+            return original_embed_batch(self, texts, memory_action)
+        max_batch = 100
+        texts = [text.replace("\n", " ") for text in texts]
+        all_embeddings = []
+        for i in range(0, len(texts), max_batch):
+            chunk = texts[i : i + max_batch]
+            response = self.client.embeddings.create(
+                input=chunk,
+                model=self.config.model,
+                dimensions=dimensions,
+            )
+            all_embeddings.extend(item.embedding for item in sorted(response.data, key=lambda x: x.index))
+        return all_embeddings
+
+    def patched_get_common_params(self, **kwargs):
+        params = original_get_common_params(self, **kwargs)
+        if _model_uses_max_completion_tokens(getattr(self.config, "model", None)) and "max_tokens" in params:
+            params["max_completion_tokens"] = params.pop("max_tokens")
+        return params
+
+    def patched_pgvector_search(self, query, vectors, top_k=5, filters=None):
+        results = original_pgvector_search(self, query, vectors, top_k, filters)
+        return [
+            OutputData(id=r.id, score=max(0.0, min(1.0, 1.0 - r.score)), payload=r.payload) for r in results
+        ]
+
+    AzureOpenAIEmbedding.embed = patched_embed
+    AzureOpenAIEmbedding.embed_batch = patched_embed_batch
+    LLMBase._get_common_params = patched_get_common_params
+    PGVector.search = patched_pgvector_search
+    _PATCHES_APPLIED = True
+
+
+_apply_patches()
 set_session_factory(SessionLocal)
 initialize_state(DEFAULT_CONFIG)
 

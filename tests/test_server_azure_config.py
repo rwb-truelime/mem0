@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -88,3 +89,78 @@ def test_openai_defaults_remain_openai_when_provider_env_is_omitted():
     assert config["embedder"]["provider"] == "openai"
     assert config["embedder"]["config"]["api_key"] == "fake-key"
     assert "azure_kwargs" not in config["embedder"]["config"]
+
+
+def test_azure_embedding_patch_passes_dimensions_to_single_and_batch_calls():
+    server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
+    server_main._apply_patches()
+
+    from mem0.configs.embeddings.base import BaseEmbedderConfig
+    from mem0.embeddings.azure_openai import AzureOpenAIEmbedding
+
+    class FakeEmbeddings:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            data = [SimpleNamespace(index=i, embedding=[float(i)] * 1536) for i, _ in enumerate(kwargs["input"])]
+            return SimpleNamespace(data=data)
+
+    embedder = AzureOpenAIEmbedding.__new__(AzureOpenAIEmbedding)
+    embedder.config = BaseEmbedderConfig(model="text-embedding-3-large", embedding_dims=1536, azure_kwargs={})
+    fake_embeddings = FakeEmbeddings()
+    embedder.client = SimpleNamespace(embeddings=fake_embeddings)
+
+    embedder.embed("hello")
+    embedder.embed_batch(["first", "second"])
+
+    assert fake_embeddings.calls[0]["dimensions"] == 1536
+    assert fake_embeddings.calls[1]["dimensions"] == 1536
+    assert fake_embeddings.calls[1]["input"] == ["first", "second"]
+
+
+def test_pgvector_patch_converts_distance_to_clamped_similarity():
+    server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
+
+    from mem0.vector_stores.pgvector import OutputData, PGVector
+
+    original_search = PGVector.search
+
+    def fake_search(self, query, vectors, top_k=5, filters=None):
+        return [
+            OutputData(id="near", score=0.1, payload={"text": "near"}),
+            OutputData(id="far", score=1.2, payload={"text": "far"}),
+        ]
+
+    try:
+        PGVector.search = fake_search
+        server_main._PATCHES_APPLIED = False
+        server_main._apply_patches()
+        results = PGVector.search(object(), "query", [0.0], 2)
+    finally:
+        PGVector.search = original_search
+
+    assert results[0].score == 0.9
+    assert results[1].score == 0.0
+
+
+def test_llm_patch_uses_max_completion_tokens_for_modern_gpt_models():
+    server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
+    server_main._apply_patches()
+
+    from mem0.configs.llms.base import BaseLlmConfig
+    from mem0.llms.base import LLMBase
+
+    class TestLLM(LLMBase):
+        def generate_response(self, messages, tools=None, tool_choice="auto", **kwargs):
+            return "ok"
+
+    llm = TestLLM.__new__(TestLLM)
+    llm.config = BaseLlmConfig(model="gpt-5.4-mini", max_tokens=123, temperature=0.2, top_p=0.1)
+
+    params = llm._get_common_params()
+
+    assert params["max_completion_tokens"] == 123
+    assert "max_tokens" not in params
+    assert params["temperature"] == 0.2
