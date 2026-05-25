@@ -1,3 +1,8 @@
+# Local files
+opencode-session-mem0-config.md
+.gitnexus
+.claude
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
