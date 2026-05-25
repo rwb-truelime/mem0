@@ -19,7 +19,7 @@ class BaseLlmConfig(ABC):
         temperature: float = 0.1,
         api_key: Optional[str] = None,
         max_tokens: int = 2000,
-        top_p: float = 0.1,
+        top_p: float = 1.0,
         top_k: int = 1,
         enable_vision: bool = False,
         vision_details: Optional[str] = "auto",
@@ -41,7 +41,7 @@ class BaseLlmConfig(ABC):
                 Range: 1 to 4096 (varies by model). Defaults to 2000
             top_p: Nucleus sampling parameter. Controls diversity via nucleus sampling.
                 Higher values (closer to 1) make word selection more diverse.
-                Range: 0.0 to 1.0. Defaults to 0.1
+                Range: 0.0 to 1.0. Defaults to 1.0
             top_k: Top-k sampling parameter. Limits the number of tokens considered for each step.
                 Higher values make word selection more diverse.
                 Range: 1 to 40. Defaults to 1

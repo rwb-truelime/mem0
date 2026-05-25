@@ -15,6 +15,13 @@ def mock_openai_client():
         yield mock_client
 
 
+def test_openai_config_defaults_top_p_to_provider_default():
+    config = OpenAIConfig(model="gpt-4.1-nano-2025-04-14", api_key="api_key")
+
+    assert config.temperature == 0.1
+    assert config.top_p == 1.0
+
+
 def test_openai_llm_base_url():
     # case1: default config: with openai official base url
     config = OpenAIConfig(model="gpt-4.1-nano-2025-04-14", temperature=0.7, max_tokens=100, top_p=1.0, api_key="api_key")

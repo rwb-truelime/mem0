@@ -84,7 +84,7 @@ def test_both_set_prefers_temperature_over_top_p(mock_anthropic_client):
 
 
 def test_base_config_conversion_does_not_send_both(mock_anthropic_client):
-    """BaseLlmConfig defaults both temperature=0.1 and top_p=0.1; Anthropic must not send both."""
+    """BaseLlmConfig defaults temperature and top_p; Anthropic must not send both."""
     base_config = BaseLlmConfig(model="claude-3-5-sonnet-20240620", api_key="test-key")
     llm = AnthropicLLM(base_config)
 

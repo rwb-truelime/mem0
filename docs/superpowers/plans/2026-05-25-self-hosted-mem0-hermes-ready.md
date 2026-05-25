@@ -293,7 +293,7 @@ def test_llm_patch_uses_max_completion_tokens_for_modern_gpt_models():
     from mem0.llms.base import LLMBase
 
     llm = LLMBase.__new__(LLMBase)
-    llm.config = BaseLlmConfig(model="gpt-5.4-mini", max_tokens=123, temperature=0.2, top_p=0.1)
+    llm.config = BaseLlmConfig(model="gpt-5.4-mini", max_tokens=123, temperature=0.2, top_p=1.0)
 
     params = llm._get_common_params()
 
