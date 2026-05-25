@@ -120,31 +120,6 @@ def test_azure_embedding_patch_passes_dimensions_to_single_and_batch_calls():
     assert fake_embeddings.calls[1]["input"] == ["first", "second"]
 
 
-def test_pgvector_patch_converts_distance_to_clamped_similarity():
-    server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
-
-    from mem0.vector_stores.pgvector import OutputData, PGVector
-
-    original_search = PGVector.search
-
-    def fake_search(self, query, vectors, top_k=5, filters=None):
-        return [
-            OutputData(id="near", score=0.1, payload={"text": "near"}),
-            OutputData(id="far", score=1.2, payload={"text": "far"}),
-        ]
-
-    try:
-        PGVector.search = fake_search
-        server_main._PATCHES_APPLIED = False
-        server_main._apply_patches()
-        results = PGVector.search(object(), "query", [0.0], 2)
-    finally:
-        PGVector.search = original_search
-
-    assert results[0].score == 0.9
-    assert results[1].score == 0.0
-
-
 def test_llm_patch_uses_max_completion_tokens_for_modern_gpt_models():
     server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
     server_main._apply_patches()

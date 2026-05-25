@@ -102,4 +102,4 @@ A future project can evaluate `halfvec(3072)`, storing full `vector(3072)` with 
 - Dashboard build fails on Node 20: rebuild with the included Node 22 Dockerfile.
 - New writes return `200 OK` but do not appear in GET results: check logs for pgvector dimension errors.
 - `expected 1536 dimensions, not 3072`: confirm `MEM0_DEFAULT_EMBEDDING_DIMS=1536`, full down/up was run, and Azure batch embeddings pass dimensions.
-- Search ranking looks inverted: confirm pgvector cosine distance is converted to similarity.
+- Search ranking looks inverted: confirm `mem0/vector_stores/pgvector.py` converts pgvector cosine distance to similarity.

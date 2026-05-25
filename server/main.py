@@ -193,12 +193,10 @@ def _apply_patches() -> None:
 
     from mem0.embeddings.azure_openai import AzureOpenAIEmbedding
     from mem0.llms.base import LLMBase
-    from mem0.vector_stores.pgvector import OutputData, PGVector
 
     original_embed = AzureOpenAIEmbedding.embed
     original_embed_batch = AzureOpenAIEmbedding.embed_batch
     original_get_common_params = LLMBase._get_common_params
-    original_pgvector_search = PGVector.search
 
     def patched_embed(self, text, memory_action=None):
         dimensions = getattr(self.config, "embedding_dims", None)
@@ -234,16 +232,9 @@ def _apply_patches() -> None:
             params["max_completion_tokens"] = params.pop("max_tokens")
         return params
 
-    def patched_pgvector_search(self, query, vectors, top_k=5, filters=None):
-        results = original_pgvector_search(self, query, vectors, top_k, filters)
-        return [
-            OutputData(id=r.id, score=max(0.0, min(1.0, 1.0 - r.score)), payload=r.payload) for r in results
-        ]
-
     AzureOpenAIEmbedding.embed = patched_embed
     AzureOpenAIEmbedding.embed_batch = patched_embed_batch
     LLMBase._get_common_params = patched_get_common_params
-    PGVector.search = patched_pgvector_search
     _PATCHES_APPLIED = True
 
 

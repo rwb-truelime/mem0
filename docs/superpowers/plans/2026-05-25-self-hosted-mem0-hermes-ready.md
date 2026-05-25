@@ -19,7 +19,7 @@
 - Modify `server/dashboard/Dockerfile`: Move dashboard build to Node 22 and use a pnpm 11-safe install path.
 - Create `tests/test_server_azure_config.py`: Pure unit tests for provider lists, default config generation, and runtime patch behavior with mocked clients.
 - Create or update `MEM0-SELF-HOSTED-RUNBOOK.md`: Root-level runbook for Docker, Azure, persistence verification, troubleshooting, and Hermes compatibility contract.
-- Keep `mem0/embeddings/azure_openai.py`, `mem0/vector_stores/pgvector.py`, and `mem0/llms/base.py` unchanged unless a later impact analysis and failing test prove direct SDK fixes are safer than server-local compatibility patches.
+- Keep Azure embedding and LLM compatibility patches server-local. Implement pgvector distance-to-similarity as a permanent SDK fix in `mem0/vector_stores/pgvector.py` because this fork should carry that bug fix directly.
 
 ## Pre-Execution Requirements
 
@@ -282,28 +282,7 @@ def test_azure_embedding_patch_passes_dimensions_to_single_and_batch_calls():
     assert fake_embeddings.calls[1]["input"] == ["first", "second"]
 
 
-def test_pgvector_patch_converts_distance_to_clamped_similarity():
-    server_main = load_server_main({"OPENAI_API_KEY": "fake-key", "ADMIN_API_KEY": ""})
-
-    from mem0.vector_stores.pgvector import OutputData, PGVector
-
-    original_search = PGVector.search
-
-    def fake_search(self, query, vectors, top_k=5, filters=None):
-        return [
-            OutputData(id="near", score=0.1, payload={"text": "near"}),
-            OutputData(id="far", score=1.2, payload={"text": "far"}),
-        ]
-
-    try:
-        PGVector.search = fake_search
-        server_main._apply_patches()
-        results = PGVector.search(object(), "query", [0.0], 2)
-    finally:
-        PGVector.search = original_search
-
-    assert results[0].score == 0.9
-    assert results[1].score == 0.0
+Update the existing `tests/vector_stores/test_pgvector.py` search assertions so raw pgvector distances `0.1` and `0.2` are expected as similarity scores `0.9` and `0.8`.
 
 
 def test_llm_patch_uses_max_completion_tokens_for_modern_gpt_models():
@@ -351,12 +330,10 @@ def _apply_patches() -> None:
 
     from mem0.embeddings.azure_openai import AzureOpenAIEmbedding
     from mem0.llms.base import LLMBase
-    from mem0.vector_stores.pgvector import OutputData, PGVector
 
     original_embed = AzureOpenAIEmbedding.embed
     original_embed_batch = AzureOpenAIEmbedding.embed_batch
     original_get_common_params = LLMBase._get_common_params
-    original_pgvector_search = PGVector.search
 
     def patched_embed(self, text, memory_action=None):
         dimensions = getattr(self.config, "embedding_dims", None)
@@ -392,17 +369,9 @@ def _apply_patches() -> None:
             params["max_completion_tokens"] = params.pop("max_tokens")
         return params
 
-    def patched_pgvector_search(self, query, vectors, top_k=5, filters=None):
-        results = original_pgvector_search(self, query, vectors, top_k, filters)
-        return [
-            OutputData(id=r.id, score=max(0.0, min(1.0, 1.0 - r.score)), payload=r.payload)
-            for r in results
-        ]
-
     AzureOpenAIEmbedding.embed = patched_embed
     AzureOpenAIEmbedding.embed_batch = patched_embed_batch
     LLMBase._get_common_params = patched_get_common_params
-    PGVector.search = patched_pgvector_search
     _PATCHES_APPLIED = True
 ```
 
@@ -432,7 +401,7 @@ Run:
 
 ```bash
 git add server/main.py tests/test_server_azure_config.py
-git commit -m "fix(server): patch azure embeddings and pgvector scoring"
+git commit -m "fix(server): patch azure embeddings and modern tokens"
 ```
 
 Expected: Commit succeeds.
@@ -677,7 +646,7 @@ The Hermes plugin itself is a separate follow-up project.
 - Dashboard build fails on Node 20: rebuild with the included Node 22 Dockerfile.
 - New writes return `200 OK` but do not appear in GET results: check logs for pgvector dimension errors.
 - `expected 1536 dimensions, not 3072`: confirm `MEM0_DEFAULT_EMBEDDING_DIMS=1536`, full down/up was run, and Azure batch embeddings pass dimensions.
-- Search ranking looks inverted: confirm pgvector cosine distance is converted to similarity.
+- Search ranking looks inverted: confirm `mem0/vector_stores/pgvector.py` converts pgvector cosine distance to similarity.
 ```
 
 - [ ] **Step 3: Verify docs contain no secrets**
